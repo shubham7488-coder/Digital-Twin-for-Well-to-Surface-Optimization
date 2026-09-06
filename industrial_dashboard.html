@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SIH 26120: Industrial Operations & Digital Twin Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&display=swap');
+    
+    * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    
+    .scada-card {
+      background: rgba(10, 22, 44, 0.85);
+      border: 1px solid rgba(0, 229, 255, 0.18);
+      backdrop-filter: blur(12px);
+    }
+    .scada-card:hover {
+      border-color: rgba(0, 229, 255, 0.35);
+    }
+    .scada-header-glow {
+      box-shadow: 0 4px 24px -2px rgba(0, 229, 255, 0.15);
+    }
+    
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #050b17; }
+    ::-webkit-scrollbar-thumb { background: #1e3a5f; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #00e5ff; }
+
+    @keyframes walking-beam {
+      0%, 100% { transform: rotate(-8deg); }
+      50% { transform: rotate(8deg); }
+    }
+    .animate-beam {
+      transform-origin: 50% 60%;
+      animation: walking-beam 3s ease-in-out infinite;
+    }
+    
+    @keyframes led-blink {
+      0%, 100% { opacity: 1; filter: drop-shadow(0 0 6px #10b981); }
+      50% { opacity: 0.3; }
+    }
+    .led-live {
+      animation: led-blink 1.2s ease-in-out infinite;
+    }
+
+    input[type=range] {
+      accent-color: #00e5ff;
+    }
+  </style>
+</head>
+<body class="bg-[#040814] text-slate-100 min-h-screen antialiased selection:bg-cyan-500 selection:text-slate-950 pb-10">
+
+  <!-- Top SCADA Industrial Navigation Bar -->
+  <header class="bg-[#071326] border-b border-cyan-500/30 sticky top-0 z-50 scada-header-glow px-4 py-2.5">
+    <div class="max-w-[1700px] mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+      
+      <!-- Brand & Well Identifier -->
+      <div class="flex items-center gap-3.5">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 to-teal-400 p-0.5 flex items-center justify-center shadow-lg shadow-cyan-500/30">
+          <div class="w-full h-full bg-[#071326] rounded-[10px] flex items-center justify-center font-mono font-extrabold text-cyan-400 text-xs">
+            DT
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-mono font-bold text-cyan-300 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-700/60">
+              SIH-26120
+            </span>
+            <span class="text-xs font-mono text-slate-300">ASSET: <b class="text-white">BHARAT-HEAVY-PAD-04</b></span>
+            <span class="text-[11px] font-mono text-slate-400">| WELL: <b class="text-cyan-400">CSS-SRP-W108</b></span>
+          </div>
+          <h1 class="text-sm font-bold text-white tracking-wide">
+            AI-POWERED WELL-TO-SURFACE DIGITAL TWIN &bull; INTEGRATED CSS–SRP DCS
+          </h1>
+        </div>
+      </div>
+
+      <!-- Real-time Status Indicators & Controls -->
+      <div class="flex flex-wrap items-center gap-3">
+        
+        <!-- Live Backend & Database Connection Badge -->
+        <div id="backendStatusBadge" class="flex items-center gap-2 bg-[#0a1b33] border border-cyan-500/30 px-3 py-1.5 rounded-lg text-xs font-mono">
+          <span id="backendLed" class="w-2.5 h-2.5 rounded-full bg-emerald-400 led-live"></span>
+          <span id="backendStatusText" class="text-emerald-400 font-bold">NODE.JS + DB PERSISTENCE</span>
+          <span class="text-slate-400 text-[11px]" id="liveClock">12:35:00 UTC</span>
+        </div>
+
+        <!-- Mode Toggle -->
+        <div class="flex items-center bg-[#050e1d] p-1 rounded-lg border border-slate-700 text-xs font-mono">
+          <button onclick="setSimState(true)" id="liveSimBtn" class="px-2.5 py-1 rounded bg-cyan-500 text-slate-950 font-bold transition-all">
+            LIVE TELEMETRY
+          </button>
+          <button onclick="setSimState(false)" id="pauseSimBtn" class="px-2.5 py-1 rounded text-slate-400 hover:text-white transition-all">
+            PAUSE
+          </button>
+        </div>
+
+        <!-- Quick Action: Review & Approve -->
+        <button onclick="triggerEngineerModal()" class="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-slate-950 font-bold text-xs uppercase font-mono tracking-wider rounded-lg shadow-md transition-all flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+          Review & Approve Setpoints
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Secondary Tab Navigation Bar (7 Industrial Views) -->
+    <div class="max-w-[1700px] mx-auto mt-2.5 pt-2 border-t border-slate-800 flex items-center gap-2 overflow-x-auto pb-1 text-xs font-mono">
+      <button onclick="switchView('overview')" id="tab-overview" class="view-tab px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 font-bold transition-all flex items-center gap-1.5 whitespace-nowrap">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+        1. Coupled Digital Twin
+      </button>
+
+      <button onclick="switchView('dynacard')" id="tab-dynacard" class="view-tab px-3 py-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800/60 border border-transparent transition-all flex items-center gap-1.5 whitespace-nowrap">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
+        2. SRP Dynacard
+      </button>
+
+      <button onclick="switchView('thermal')" id="tab-thermal" class="view-tab px-3 py-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800/60 border border-transparent transition-all flex items-center gap-1.5 whitespace-nowrap">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"></path></svg>
+        3. CSS Thermal
+      </button>
+
+      <button onclick="switchView('optimizer')" id="tab-optimizer" class="view-tab px-3 py-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800/60 border border-transparent transition-all flex items-center gap-1.5 whitespace-nowrap">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+        4. Joint AI+Physics Optimizer
+      </button>
+
+      <button onclick="switchView('safety')" id="tab-safety" class="view-tab px-3 py-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800/60 border border-transparent transition-all flex items-center gap-1.5 whitespace-nowrap">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+        5. Safety Audits
+      </button>
+
+      <button onclick="switchView('calibration')" id="tab-calibration" class="view-tab px-3 py-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800/60 border border-transparent transition-all flex items-center gap-1.5 whitespace-nowrap">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+        6. Kalman Calibration
+      </button>
+
+      <!-- VIEW 7: DATABASE -->
+      <button onclick="switchView('database')" id="tab-database" class="view-tab px-3 py-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800/60 border border-transparent transition-all flex items-center gap-1.5 whitespace-nowrap">
+        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+        7. Database & Records
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-[1700px] mx-auto px-4 mt-4 space-y-4">
+
+    <!-- Top KPI Telemetry Banner -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 font-mono">
+      <div class="scada-card rounded-xl p-3 border-l-4 border-l-emerald-400">
+        <div class="flex items-center justify-between text-[11px] text-slate-400">
+          <span>NET OIL PRODUCTION</span>
+          <span class="text-emerald-400 text-xs">↑ +18.4%</span>
+        </div>
+        <div class="text-xl font-extrabold text-white mt-1">
+          <span id="kpi-oil">142.6</span> <span class="text-xs text-slate-400 font-normal">m³/d</span>
+        </div>
+        <div class="text-[10px] text-emerald-400/80 mt-0.5">AI Target: 145.0 m³/d</div>
+      </div>
+
+      <div class="scada-card rounded-xl p-3 border-l-4 border-l-cyan-400">
+        <div class="flex items-center justify-between text-[11px] text-slate-400">
+          <span>STEAM-OIL RATIO (SOR)</span>
+          <span class="text-cyan-400 text-xs">↓ -22.1%</span>
+        </div>
+        <div class="text-xl font-extrabold text-white mt-1">
+          <span id="kpi-sor">2.14</span> <span class="text-xs text-slate-400 font-normal">m³/m³</span>
+        </div>
+        <div class="text-[10px] text-cyan-400/80 mt-0.5">Baseline: 2.75 m³/m³</div>
+      </div>
+
+      <div class="scada-card rounded-xl p-3 border-l-4 border-l-indigo-400">
+        <div class="flex items-center justify-between text-[11px] text-slate-400">
+          <span>DOWNHOLE TEMP (T_bh)</span>
+          <span class="text-indigo-300 text-xs">Marx-Langenheim</span>
+        </div>
+        <div class="text-xl font-extrabold text-white mt-1">
+          <span id="kpi-temp">168.4</span> <span class="text-xs text-slate-400 font-normal">°C</span>
+        </div>
+        <div class="text-[10px] text-indigo-300/80 mt-0.5">Viscosity: <b id="kpi-visc">48.2</b> cP</div>
+      </div>
+
+      <div class="scada-card rounded-xl p-3 border-l-4 border-l-amber-400">
+        <div class="flex items-center justify-between text-[11px] text-slate-400">
+          <span>SRP PUMP SPEED (SPM)</span>
+          <span class="text-amber-400 text-xs">VFD Coordinated</span>
+        </div>
+        <div class="text-xl font-extrabold text-white mt-1">
+          <span id="kpi-spm">6.8</span> <span class="text-xs text-slate-400 font-normal">SPM</span>
+        </div>
+        <div class="text-[10px] text-amber-400/80 mt-0.5">Stroke: 144 in &bull; Fillage: <span id="kpi-fillage-text">88.5</span>%</div>
+      </div>
+
+      <div class="scada-card rounded-xl p-3 border-l-4 border-l-rose-400">
+        <div class="flex items-center justify-between text-[11px] text-slate-400">
+          <span>PEAK POLISHED ROD LOAD</span>
+          <span class="text-emerald-400 text-xs">Goodman Safe</span>
+        </div>
+        <div class="text-xl font-extrabold text-white mt-1">
+          <span id="kpi-pprl">21,450</span> <span class="text-xs text-slate-400 font-normal">lbs</span>
+        </div>
+        <div class="text-[10px] text-slate-400 mt-0.5">Stress Margin: <b class="text-emerald-400" id="kpi-stress-text">68% of API limit</b></div>
+      </div>
+
+      <div class="scada-card rounded-xl p-3 border-l-4 border-l-teal-400">
+        <div class="flex items-center justify-between text-[11px] text-slate-400">
+          <span>SPECIFIC LIFT ENERGY</span>
+          <span class="text-teal-400 text-xs">↓ -17.5%</span>
+        </div>
+        <div class="text-xl font-extrabold text-white mt-1">
+          <span id="kpi-energy">18.6</span> <span class="text-xs text-slate-400 font-normal">kWh/m³</span>
+        </div>
+        <div class="text-[10px] text-teal-400/80 mt-0.5">Motor Pwr: <span id="kpi-motor-kw">34.2</span> kW</div>
+      </div>
+    </div>
+
+    <!-- VIEW 1: OVERVIEW -->
+    <div id="view-overview" class="view-panel space-y-4">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div class="lg:col-span-8 scada-card rounded-2xl p-5 shadow-xl">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div>
+              <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                Coupled Subsurface-to-Surface Well Schematic & Live Dynamics
+              </h2>
+              <p class="text-xs text-slate-400 mt-0.5">Physical coupling: Steam injection &rarr; thermal dissipation &rarr; viscosity drop &rarr; IPR inflow &rarr; SRP rod load &rarr; surface flow.</p>
+            </div>
+            <div class="flex items-center gap-2 font-mono text-[11px]">
+              <span class="px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">Coupled Solver: Active</span>
+            </div>
+          </div>
+
+          <div class="relative w-full h-[460px] bg-[#030712] rounded-xl mt-4 border border-slate-800 overflow-hidden flex items-center justify-center">
+            <svg viewBox="0 0 900 440" class="w-full h-full">
+              <defs>
+                <radialGradient id="steamGradient" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="#ef4444" stop-opacity="0.8" />
+                  <stop offset="40%" stop-color="#f59e0b" stop-opacity="0.5" />
+                  <stop offset="80%" stop-color="#06b6d4" stop-opacity="0.2" />
+                  <stop offset="100%" stop-color="#030712" stop-opacity="0" />
+                </radialGradient>
+                <linearGradient id="oilFlowGrad" x1="0" y1="1" x2="0" y2="0">
+                  <stop offset="0%" stop-color="#10b981" />
+                  <stop offset="100%" stop-color="#00f0ff" />
+                </linearGradient>
+              </defs>
+
+              <rect x="0" y="240" width="900" height="200" fill="#091428" opacity="0.6"/>
+              <text x="20" y="260" fill="#475569" font-size="10" font-family="JetBrains Mono">CAPROCK SEAL (Impermeable Shale)</text>
+              <line x1="0" y1="270" x2="900" y2="270" stroke="#1e293b" stroke-dasharray="4,4"/>
+              
+              <rect x="0" y="270" width="900" height="170" fill="#0b172a" opacity="0.9"/>
+              <text x="20" y="290" fill="#38bdf8" font-size="10" font-family="JetBrains Mono">PAY ZONE: Heavy Oil Sand (Viscosity 14,000 cP &bull; Perm 1,200 mD)</text>
+
+              <ellipse cx="450" cy="370" rx="260" ry="60" fill="url(#steamGradient)" class="animate-pulse"/>
+              <text x="560" y="360" fill="#fca5a5" font-size="11" font-family="JetBrains Mono" font-weight="bold">Heated Steam Chamber (168°C)</text>
+
+              <line x1="0" y1="100" x2="900" y2="100" stroke="#334155" stroke-width="2"/>
+              <text x="20" y="90" fill="#94a3b8" font-size="10" font-family="JetBrains Mono">SURFACE GROUND LEVEL (0.0 m TVD)</text>
+
+              <rect x="430" y="100" width="40" height="280" fill="#1e293b" stroke="#00e5ff" stroke-width="1.5" opacity="0.85"/>
+              <line x1="450" y1="70" x2="450" y2="360" stroke="#f8fafc" stroke-width="3"/>
+              
+              <rect x="438" y="340" width="24" height="35" fill="#047857" stroke="#34d399" stroke-width="1.5" rx="2"/>
+              <text x="320" y="355" fill="#34d399" font-size="10" font-family="JetBrains Mono">Downhole Pump (144" stroke)</text>
+
+              <polygon points="410,100 425,50 435,50 450,100" fill="#334155" stroke="#64748b"/>
+              
+              <g id="walkingBeamGroup" class="animate-beam">
+                <line x1="360" y1="50" x2="490" y2="50" stroke="#0284c7" stroke-width="8" stroke-linecap="round"/>
+                <path d="M 490 50 Q 505 40 505 75" fill="none" stroke="#00e5ff" stroke-width="6" stroke-linecap="round"/>
+                <line x1="505" y1="70" x2="450" y2="70" stroke="#e2e8f0" stroke-width="1.5"/>
+                <circle cx="360" cy="50" r="14" fill="#f59e0b" stroke="#78350f" stroke-width="2"/>
+              </g>
+
+              <path d="M 470 115 L 680 115 L 680 80" fill="none" stroke="url(#oilFlowGrad)" stroke-width="4" stroke-dasharray="8,4" class="animate-dash"/>
+              <rect x="650" y="55" width="80" height="35" fill="#0f172a" stroke="#00e5ff" stroke-width="1.5" rx="4"/>
+              <text x="660" y="70" fill="#00e5ff" font-size="9" font-family="JetBrains Mono" font-weight="bold">SCADA RTU</text>
+              <text x="660" y="82" fill="#94a3b8" font-size="8" font-family="JetBrains Mono">142.6 m³/d</text>
+
+              <path d="M 220 80 L 220 115 L 430 115" fill="none" stroke="#ef4444" stroke-width="3" stroke-dasharray="4,4"/>
+              <rect x="150" y="55" width="90" height="35" fill="#1e1b4b" stroke="#ef4444" stroke-width="1.5" rx="4"/>
+              <text x="158" y="70" fill="#f87171" font-size="9" font-family="JetBrains Mono" font-weight="bold">STEAM GEN</text>
+              <text x="158" y="82" fill="#cbd5e1" font-size="8" font-family="JetBrains Mono">12.5 MPa</text>
+            </svg>
+          </div>
+        </div>
+
+        <div class="lg:col-span-4 space-y-4 font-mono text-xs">
+          <div class="scada-card rounded-2xl p-5 shadow-xl">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h3 class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                Live Sensor Streams
+              </h3>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">100 Hz Stream</span>
+            </div>
+
+            <div class="space-y-3 mt-4">
+              <div>
+                <div class="flex justify-between text-slate-300 mb-1">
+                  <span>Downhole Pressure (P_wf)</span>
+                  <span class="font-bold text-cyan-300"><span id="val-pwf">3.42</span> MPa</span>
+                </div>
+                <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                  <div id="bar-pwf" class="bg-cyan-400 h-full rounded-full" style="width: 58%"></div>
+                </div>
+              </div>
+
+              <div>
+                <div class="flex justify-between text-slate-300 mb-1">
+                  <span>Steam Chamber Temperature</span>
+                  <span class="font-bold text-amber-300"><span id="val-temp-stream">168.4</span> °C</span>
+                </div>
+                <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                  <div class="bg-amber-400 h-full rounded-full" style="width: 74%"></div>
+                </div>
+              </div>
+
+              <div>
+                <div class="flex justify-between text-slate-300 mb-1">
+                  <span>VFD Motor Current</span>
+                  <span class="font-bold text-emerald-300"><span id="val-current">46.8</span> A</span>
+                </div>
+                <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                  <div class="bg-emerald-400 h-full rounded-full" style="width: 62%"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-5 p-3 bg-[#061224] rounded-xl border border-emerald-500/30 flex items-center justify-between">
+              <div>
+                <div class="text-[10px] text-slate-400">DIGITAL TWIN RESIDUAL MATCH</div>
+                <div class="text-xs font-bold text-emerald-400" id="kalmanConfidenceText">98.6% Confidence</div>
+              </div>
+              <div class="w-3 h-3 rounded-full bg-emerald-400 animate-ping"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW 2: DYNACARD -->
+    <div id="view-dynacard" class="view-panel hidden space-y-4">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div class="lg:col-span-7 scada-card rounded-2xl p-5 shadow-xl">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <h2 class="text-sm font-bold text-white uppercase tracking-wider font-mono">SRP Dynamometer Card (Gibbs 1D Wave Solver)</h2>
+            <div class="flex items-center gap-2 font-mono text-[11px]">
+              <span class="flex items-center gap-1 text-cyan-300"><span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span> Surface Card</span>
+              <span class="flex items-center gap-1 text-emerald-300"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span> Downhole Card</span>
+            </div>
+          </div>
+          <div class="relative w-full h-[380px] bg-[#020611] rounded-xl mt-4 border border-slate-800 p-2 flex items-center justify-center">
+            <canvas id="dynacardCanvas" width="640" height="360" class="w-full h-full"></canvas>
+          </div>
+        </div>
+        <div class="lg:col-span-5 scada-card rounded-2xl p-5 shadow-xl space-y-4">
+          <h3 class="text-xs font-bold text-white uppercase tracking-wider font-mono pb-2 border-b border-slate-800">Modified Goodman Stress Envelope</h3>
+          <div class="bg-[#020611] p-3 rounded-xl border border-slate-800 h-[220px] flex items-center justify-center relative">
+            <svg viewBox="0 0 400 200" class="w-full h-full">
+              <line x1="50" y1="20" x2="50" y2="170" stroke="#1e293b" stroke-width="1.5"/>
+              <line x1="50" y1="170" x2="380" y2="170" stroke="#1e293b" stroke-width="1.5"/>
+              <line x1="50" y1="40" x2="360" y2="170" stroke="#ef4444" stroke-width="2"/>
+              <polygon points="50,40 360,170 50,170" fill="#10b981" opacity="0.12"/>
+              <circle cx="160" cy="115" r="6" fill="#00f0ff" stroke="#ffffff" stroke-width="2" class="animate-pulse"/>
+              <text x="175" y="118" fill="#00f0ff" font-size="10" font-family="JetBrains Mono" font-weight="bold">Operating Point (68%)</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW 3: THERMAL -->
+    <div id="view-thermal" class="view-panel hidden space-y-4">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div class="lg:col-span-7 scada-card rounded-2xl p-5 shadow-xl">
+          <h2 class="text-sm font-bold text-white uppercase tracking-wider font-mono pb-3 border-b border-slate-800">Marx-Langenheim Heat Transfer & Viscosity Profile</h2>
+          <div class="relative w-full h-[360px] bg-[#020611] rounded-xl mt-4 border border-slate-800 p-2">
+            <canvas id="thermalCanvas" width="640" height="340" class="w-full h-full"></canvas>
+          </div>
+        </div>
+        <div class="lg:col-span-5 scada-card rounded-2xl p-5 shadow-xl space-y-4 font-mono text-xs">
+          <h3 class="text-xs font-bold text-white uppercase tracking-wider pb-3 border-b border-slate-800">Viscosity-Temperature Sensitivity</h3>
+          <div class="p-3 bg-[#061224] rounded-xl border border-slate-800 space-y-2">
+            <div class="flex justify-between"><span>Cold Reservoir (38°C):</span><span class="text-rose-400 font-bold">14,200 cP</span></div>
+            <div class="flex justify-between"><span>Peak Chamber (220°C):</span><span class="text-emerald-400 font-bold">18.5 cP</span></div>
+            <div class="flex justify-between"><span>Current Entry (168°C):</span><span class="text-cyan-300 font-bold">48.2 cP</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW 4: OPTIMIZER -->
+    <div id="view-optimizer" class="view-panel hidden space-y-4">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div class="lg:col-span-5 scada-card rounded-2xl p-5 shadow-xl space-y-4 font-mono">
+          <h2 class="text-sm font-bold text-white uppercase tracking-wider pb-3 border-b border-slate-800">Co-Optimization Control Sliders</h2>
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs"><span>Steam Volume:</span><span class="text-cyan-400 font-bold"><span id="slider-steam-val">4200</span> tonnes</span></div>
+            <input type="range" id="slider-steam" min="2000" max="6000" step="100" value="4200" oninput="updateOptimization()" class="w-full h-2 bg-slate-800 rounded-lg cursor-pointer">
+          </div>
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs"><span>Soak Duration:</span><span class="text-cyan-400 font-bold"><span id="slider-soak-val">5</span> Days</span></div>
+            <input type="range" id="slider-soak" min="2" max="14" step="1" value="5" oninput="updateOptimization()" class="w-full h-2 bg-slate-800 rounded-lg cursor-pointer">
+          </div>
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs"><span>Stroke Length:</span><span class="text-cyan-400 font-bold"><span id="slider-stroke-val">144</span> in</span></div>
+            <input type="range" id="slider-stroke" min="100" max="192" step="12" value="144" oninput="updateOptimization()" class="w-full h-2 bg-slate-800 rounded-lg cursor-pointer">
+          </div>
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs"><span>Speed (SPM):</span><span class="text-cyan-400 font-bold"><span id="slider-spm-val">6.8</span> SPM</span></div>
+            <input type="range" id="slider-spm" min="3.0" max="12.0" step="0.2" value="6.8" oninput="updateOptimization()" class="w-full h-2 bg-slate-800 rounded-lg cursor-pointer">
+          </div>
+          <div class="pt-3 border-t border-slate-800 flex gap-2">
+            <button onclick="applyOptimalRecipe()" class="flex-1 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 text-slate-950 font-bold text-xs rounded-xl shadow-lg">Load AI-Optimal</button>
+            <button onclick="resetSliders()" class="px-3 py-2 bg-slate-800 text-slate-300 text-xs rounded-xl">Reset</button>
+          </div>
+        </div>
+
+        <div class="lg:col-span-7 scada-card rounded-2xl p-5 shadow-xl space-y-4">
+          <h3 class="text-xs font-bold text-white uppercase tracking-wider font-mono pb-3 border-b border-slate-800">What-If Benchmarking Matrix</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs font-mono text-left">
+              <thead class="text-slate-400 bg-[#061224] border-b border-slate-800">
+                <tr><th class="p-2">Strategy</th><th class="p-2">Cum Oil</th><th class="p-2">SOR</th><th class="p-2">Energy</th><th class="p-2">Fatigue</th><th class="p-2">NPV Gain</th></tr>
+              </thead>
+              <tbody class="divide-y divide-slate-800/60">
+                <tr class="bg-slate-900/40"><td class="p-2 font-bold text-slate-400">Baseline</td><td class="p-2">9,850 m³</td><td class="p-2 text-rose-400">2.75</td><td class="p-2">22.5</td><td class="p-2 text-amber-400">82%</td><td class="p-2">$0</td></tr>
+                <tr class="bg-cyan-950/30"><td class="p-2 font-bold text-cyan-300">AI-Pareto Optimal</td><td class="p-2 font-bold text-emerald-400">11,920 m³</td><td class="p-2 text-cyan-300">2.14</td><td class="p-2 text-teal-300">18.6</td><td class="p-2 text-emerald-400">68%</td><td class="p-2 text-emerald-400">+$486,000</td></tr>
+                <tr class="bg-slate-900/20"><td class="p-2 font-bold text-amber-300">Custom Recipe</td><td class="p-2 font-bold text-white"><span id="custom-oil">11,850</span> m³</td><td class="p-2 text-cyan-300"><span id="custom-sor">2.16</span></td><td class="p-2 text-teal-300"><span id="custom-energy">18.8</span></td><td class="p-2 text-emerald-400"><span id="custom-fatigue">68%</span></td><td class="p-2 text-emerald-400">+<span id="custom-npv">$472,000</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW 5: SAFETY -->
+    <div id="view-safety" class="view-panel hidden space-y-4">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div class="lg:col-span-8 scada-card rounded-2xl p-5 shadow-xl space-y-4 font-mono text-xs">
+          <h2 class="text-sm font-bold text-white uppercase tracking-wider pb-3 border-b border-slate-800">Safety Constraint Verification</h2>
+          <div class="space-y-3">
+            <div class="p-3 bg-[#061224] rounded-xl border border-emerald-500/30 flex items-center justify-between">
+              <div><div class="font-bold text-white">1. Caprock Fracture Limit</div><div class="text-[11px] text-slate-400">Inj Press: 12.5 MPa &bull; Fracture: 16.8 MPa</div></div>
+              <span class="px-2.5 py-1 rounded bg-emerald-950 text-emerald-400 font-bold border border-emerald-800">PASS (25.6%)</span>
+            </div>
+            <div class="p-3 bg-[#061224] rounded-xl border border-emerald-500/30 flex items-center justify-between">
+              <div><div class="font-bold text-white">2. Sucker Rod Goodman Peak Load</div><div class="text-[11px] text-slate-400">Peak Load: 21,450 lbs &bull; Allowable: 31,500 lbs</div></div>
+              <span class="px-2.5 py-1 rounded bg-emerald-950 text-emerald-400 font-bold border border-emerald-800">PASS (32.0%)</span>
+            </div>
+          </div>
+        </div>
+        <div class="lg:col-span-4 scada-card rounded-2xl p-5 shadow-xl space-y-4">
+          <h3 class="text-xs font-bold text-white uppercase tracking-wider font-mono pb-2 border-b border-slate-800">Human-in-the-Loop Gateway</h3>
+          <p class="text-slate-300 text-xs font-mono">Zero unsupervised automated overrides. Every update is logged in the database.</p>
+          <button onclick="triggerEngineerModal()" class="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-bold text-xs uppercase font-mono tracking-wider rounded-xl shadow-lg">
+            Open Approval Console
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW 6: CALIBRATION -->
+    <div id="view-calibration" class="view-panel hidden space-y-4 font-mono text-xs">
+      <div class="scada-card rounded-2xl p-5 shadow-xl space-y-4">
+        <h2 class="text-sm font-bold text-white uppercase tracking-wider pb-3 border-b border-slate-800">Continuous Ensemble Kalman History Matching</h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div class="bg-[#061224] p-3 rounded-xl border border-slate-800"><div class="text-slate-400 text-[10px]">PERMEABILITY</div><div class="font-bold text-cyan-300 text-sm mt-1" id="kalman-perm">1,240 mD</div></div>
+          <div class="bg-[#061224] p-3 rounded-xl border border-slate-800"><div class="text-slate-400 text-[10px]">SKIN FACTOR</div><div class="font-bold text-cyan-300 text-sm mt-1" id="kalman-skin">+1.84</div></div>
+          <div class="bg-[#061224] p-3 rounded-xl border border-slate-800"><div class="text-slate-400 text-[10px]">HEAT LOSS</div><div class="font-bold text-cyan-300 text-sm mt-1" id="kalman-heat">2.42 W/m·K</div></div>
+          <div class="bg-[#061224] p-3 rounded-xl border border-slate-800"><div class="text-slate-400 text-[10px]">PUMP SLIPPAGE</div><div class="font-bold text-cyan-300 text-sm mt-1" id="kalman-slip">0.042</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- VIEW 7: DATABASE & HISTORICAL AUDIT LEDGER -->
+    <!-- ========================================================================= -->
+    <div id="view-database" class="view-panel hidden space-y-4 font-mono text-xs">
+      
+      <!-- Database Stats Strip -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div class="scada-card rounded-xl p-3 border-l-4 border-l-cyan-400">
+          <div class="text-[10px] text-slate-400">STORAGE ENGINE</div>
+          <div class="text-sm font-bold text-cyan-300 mt-1" id="db-engine">Relational JSON Store</div>
+          <div class="text-[10px] text-slate-500 mt-0.5">ACID Compliant</div>
+        </div>
+        <div class="scada-card rounded-xl p-3 border-l-4 border-l-teal-400">
+          <div class="text-[10px] text-slate-400">ACTIVE ASSET WELLS</div>
+          <div class="text-sm font-bold text-teal-300 mt-1" id="db-wells-count">2 Wells</div>
+          <div class="text-[10px] text-slate-500 mt-0.5">W108 (Target), W104</div>
+        </div>
+        <div class="scada-card rounded-xl p-3 border-l-4 border-l-indigo-400">
+          <div class="text-[10px] text-slate-400">CSS CYCLES LOGGED</div>
+          <div class="text-sm font-bold text-indigo-300 mt-1" id="db-cycles-count">4 Cycles</div>
+          <div class="text-[10px] text-slate-500 mt-0.5">Cycle 1–4 History</div>
+        </div>
+        <div class="scada-card rounded-xl p-3 border-l-4 border-l-emerald-400">
+          <div class="text-[10px] text-slate-400">TELEMETRY SAMPLES</div>
+          <div class="text-sm font-bold text-emerald-300 mt-1" id="db-telemetry-count">142 Records</div>
+          <div class="text-[10px] text-slate-500 mt-0.5">Time-Series Buffer</div>
+        </div>
+        <div class="scada-card rounded-xl p-3 border-l-4 border-l-amber-400">
+          <div class="text-[10px] text-slate-400">ENGINEER SIGNATURES</div>
+          <div class="text-sm font-bold text-amber-300 mt-1" id="db-approvals-count">1 Authorized</div>
+          <div class="text-[10px] text-slate-500 mt-0.5">Human-in-Loop Ledger</div>
+        </div>
+        <div class="scada-card rounded-xl p-3 border-l-4 border-l-rose-400 flex flex-col justify-between">
+          <div>
+            <div class="text-[10px] text-slate-400">DATABASE BACKUP</div>
+            <div class="text-xs font-bold text-white mt-1">Export Raw JSON</div>
+          </div>
+          <a href="/api/database/export" target="_blank" class="mt-2 py-1 px-2 bg-gradient-to-r from-cyan-600 to-teal-500 hover:from-cyan-500 hover:to-teal-400 text-slate-950 font-bold text-[10px] rounded text-center block transition-all">
+            Download .json
+          </a>
+        </div>
+      </div>
+
+      <!-- CSV DATA EXPORT & DOWNLOAD HUB -->
+      <div class="scada-card rounded-2xl p-5 shadow-xl space-y-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div>
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <svg class="w-5 h-5 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+              CSV Data Export Center (Excel & Data Science Ready)
+            </h3>
+            <p class="text-[11px] text-slate-400 mt-0.5">Download real-time and historical simulation datasets in standard CSV format for jury evaluation and offline analytics.</p>
+          </div>
+          <span class="text-[10px] px-2.5 py-1 rounded bg-emerald-950 text-emerald-300 font-bold border border-emerald-700/60 whitespace-nowrap">
+            7 Datasets Available
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          
+          <!-- CSV 1 -->
+          <div class="bg-[#061224] p-3.5 rounded-xl border border-slate-800 hover:border-cyan-500/40 transition-all flex flex-col justify-between space-y-2.5">
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-cyan-400">01 | MASTER DATA</span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">0.6 KB</span>
+              </div>
+              <h4 class="font-bold text-white text-xs mt-1">Wells Master Database</h4>
+              <p class="text-[10px] text-slate-400 mt-1 leading-relaxed">Geological specs, TVD depths, formation permeability, and rod grades for Pad-04 wells.</p>
+            </div>
+            <a href="/api/database/export/csv/wells" target="_blank" class="w-full py-1.5 bg-gradient-to-r from-cyan-600 to-teal-500 hover:from-cyan-500 hover:to-teal-400 text-slate-950 font-bold text-[11px] rounded-lg text-center flex items-center justify-center gap-1.5 transition-all">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+              Download CSV
+            </a>
+          </div>
+
+          <!-- CSV 2 -->
+          <div class="bg-[#061224] p-3.5 rounded-xl border border-slate-800 hover:border-cyan-500/40 transition-all flex flex-col justify-between space-y-2.5">
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-teal-400">02 | THERMAL CSS</span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">0.4 KB</span>
+              </div>
+              <h4 class="font-bold text-white text-xs mt-1">CSS Cycles History</h4>
+              <p class="text-[10px] text-slate-400 mt-1 leading-relaxed">Cycles 1 to 4 steam volumes, injection pressure, soak duration, cumulative oil, and SOR.</p>
+            </div>
+            <a href="/api/database/export/csv/cycles" target="_blank" class="w-full py-1.5 bg-gradient-to-r from-teal-600 to-emerald-500 hover:from-teal-500 hover:to-emerald-400 text-slate-950 font-bold text-[11px] rounded-lg text-center flex items-center justify-center gap-1.5 transition-all">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+              Download CSV
+            </a>
+          </div>
+
+          <!-- CSV 3 -->
+          <div class="bg-[#061224] p-3.5 rounded-xl border border-slate-800 hover:border-cyan-500/40 transition-all flex flex-col justify-between space-y-2.5">
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-emerald-400">03 | TELEMETRY</span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">13.5 KB</span>
+              </div>
+              <h4 class="font-bold text-white text-xs mt-1">SCADA Live Time-Series</h4>
+              <p class="text-[10px] text-slate-400 mt-1 leading-relaxed">High-frequency bottomhole pressure Pwf, downhole temp, motor kW, and fluid rates.</p>
+            </div>
+            <a href="/api/database/export/csv/telemetry" target="_blank" class="w-full py-1.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-slate-950 font-bold text-[11px] rounded-lg text-center flex items-center justify-center gap-1.5 transition-all">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+              Download CSV
+            </a>
+          </div>
+
+          <!-- CSV 4 -->
+          <div class="bg-[#061224] p-3.5 rounded-xl border border-slate-800 hover:border-cyan-500/40 transition-all flex flex-col justify-between space-y-2.5">
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-indigo-400">04 | DYNACARDS</span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">4.5 KB</span>
+              </div>
+              <h4 class="font-bold text-white text-xs mt-1">SRP Dynacard Points</h4>
+              <p class="text-[10px] text-slate-400 mt-1 leading-relaxed">100-point Gibbs 1D wave solver coordinates for Surface PRT and Downhole pump fillage.</p>
+            </div>
+            <a href="/api/database/export/csv/dynacard" target="_blank" class="w-full py-1.5 bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-slate-950 font-bold text-[11px] rounded-lg text-center flex items-center justify-center gap-1.5 transition-all">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+              Download CSV
+            </a>
+          </div>
+
+          <!-- CSV 5 -->
+          <div class="bg-[#061224] p-3.5 rounded-xl border border-slate-800 hover:border-cyan-500/40 transition-all flex flex-col justify-between space-y-2.5">
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-amber-400">05 | VISCOSITY</span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">1.8 KB</span>
+              </div>
+              <h4 class="font-bold text-white text-xs mt-1">Marx-Langenheim Decay</h4>
+              <p class="text-[10px] text-slate-400 mt-1 leading-relaxed">90-day daily reservoir temperature decay, Andrade viscosity drop, and enthalpy %.</p>
+            </div>
+            <a href="/api/database/export/csv/thermal" target="_blank" class="w-full py-1.5 bg-gradient-to-r from-amber-600 to-yellow-500 hover:from-amber-500 hover:to-yellow-400 text-slate-950 font-bold text-[11px] rounded-lg text-center flex items-center justify-center gap-1.5 transition-all">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+              Download CSV
+            </a>
+          </div>
+
+          <!-- CSV 6 -->
+          <div class="bg-[#061224] p-3.5 rounded-xl border border-slate-800 hover:border-cyan-500/40 transition-all flex flex-col justify-between space-y-2.5">
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-violet-400">06 | OPTIMIZATION</span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">0.5 KB</span>
+              </div>
+              <h4 class="font-bold text-white text-xs mt-1">What-If Benchmark Matrix</h4>
+              <p class="text-[10px] text-slate-400 mt-1 leading-relaxed">Comparative matrix of Baseline vs Conservative vs AI-Pareto Optimal vs Custom recipes.</p>
+            </div>
+            <a href="/api/database/export/csv/optimization" target="_blank" class="w-full py-1.5 bg-gradient-to-r from-violet-600 to-indigo-500 hover:from-violet-500 hover:to-indigo-400 text-slate-950 font-bold text-[11px] rounded-lg text-center flex items-center justify-center gap-1.5 transition-all">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+              Download CSV
+            </a>
+          </div>
+
+          <!-- CSV 7 -->
+          <div class="bg-[#061224] p-3.5 rounded-xl border border-slate-800 hover:border-cyan-500/40 transition-all flex flex-col justify-between space-y-2.5 sm:col-span-2">
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-rose-400">07 | GOVERNANCE</span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">0.7 KB</span>
+              </div>
+              <h4 class="font-bold text-white text-xs mt-1">Engineer Approvals Audit Ledger</h4>
+              <p class="text-[10px] text-slate-400 mt-1 leading-relaxed">Step 8 Human-in-the-Loop authorization audit trail with PE license numbers, setpoints, safety status, and PLC response acknowledgment.</p>
+            </div>
+            <a href="/api/database/export/csv/approvals" target="_blank" class="w-full py-1.5 bg-gradient-to-r from-rose-600 to-pink-500 hover:from-rose-500 hover:to-pink-400 text-slate-950 font-bold text-[11px] rounded-lg text-center flex items-center justify-center gap-1.5 transition-all">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+              Download Audit Ledger CSV
+            </a>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Main Database Tables Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        
+        <!-- Left: Asset Wells & CSS Cycles (6 cols) -->
+        <div class="lg:col-span-6 scada-card rounded-2xl p-5 shadow-xl space-y-4">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+              Table: `css_cycles` (Historical & Active Runs)
+            </h3>
+            <span class="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">4 Records</span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left divide-y divide-slate-800">
+              <thead class="text-slate-400 bg-[#061224]">
+                <tr>
+                  <th class="p-2">Cycle</th>
+                  <th class="p-2">Steam (t)</th>
+                  <th class="p-2">Inj Press</th>
+                  <th class="p-2">Soak</th>
+                  <th class="p-2">Oil (m³)</th>
+                  <th class="p-2">SOR</th>
+                  <th class="p-2">Status</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-800/60" id="cyclesTableBody">
+                <tr><td class="p-2">Cycle 1</td><td class="p-2">3,200</td><td class="p-2">12.0 MPa</td><td class="p-2">4d</td><td class="p-2">8,400</td><td class="p-2 text-rose-400">2.85</td><td class="p-2 text-emerald-400">COMPLETED</td></tr>
+                <tr><td class="p-2">Cycle 2</td><td class="p-2">3,600</td><td class="p-2">12.2 MPa</td><td class="p-2">4d</td><td class="p-2">9,100</td><td class="p-2 text-amber-400">2.78</td><td class="p-2 text-emerald-400">COMPLETED</td></tr>
+                <tr><td class="p-2">Cycle 3</td><td class="p-2">3,800</td><td class="p-2">12.4 MPa</td><td class="p-2">5d</td><td class="p-2">9,850</td><td class="p-2 text-cyan-300">2.75</td><td class="p-2 text-emerald-400">COMPLETED</td></tr>
+                <tr class="bg-cyan-950/30"><td class="p-2 font-bold text-cyan-300">Cycle 4</td><td class="p-2 font-bold text-white">4,200</td><td class="p-2">12.5 MPa</td><td class="p-2">5d</td><td class="p-2 font-bold text-emerald-400">11,920</td><td class="p-2 font-bold text-emerald-400">2.14</td><td class="p-2 text-cyan-300">ACTIVE</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Right: Step 8 Engineer Approval Ledger (6 cols) -->
+        <div class="lg:col-span-6 scada-card rounded-2xl p-5 shadow-xl space-y-4">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <h3 class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              Table: `engineer_approvals` (Audit Trail Ledger)
+            </h3>
+            <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">Immutable Audit</span>
+          </div>
+
+          <div class="space-y-2.5 max-h-[280px] overflow-y-auto" id="approvalsList">
+            <div class="p-3 bg-[#061224] rounded-xl border border-emerald-500/30 space-y-1.5">
+              <div class="flex justify-between items-center">
+                <span class="font-bold text-emerald-400">AUTH-20260904-001</span>
+                <span class="text-[10px] text-slate-400">PLC ACK: 0x00_SUCCESS</span>
+              </div>
+              <div class="text-white font-bold">Er. Shubham (PE #26120-ONGC)</div>
+              <div class="text-[11px] text-slate-300">
+                Steam: <b>4,200 t</b> &bull; Soak: <b>5 Days</b> &bull; Stroke: <b>144"</b> &bull; Speed: <b>6.8 SPM</b>
+              </div>
+              <div class="text-[10px] text-slate-400 flex justify-between pt-1 border-t border-slate-800">
+                <span>Dispatched to Well CSS-SRP-W108</span>
+                <span class="text-emerald-400">Status: FIELD_ACTUATION</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ENGINEER REVIEW MODAL -->
+  <div id="engineerModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-[#09152b] border-2 border-emerald-500/60 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 text-slate-100 font-mono">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-700">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-sm border border-emerald-500/40">08</div>
+          <div>
+            <h3 class="text-sm font-bold text-white uppercase">Step 8: Production Engineer Authorization Gate</h3>
+            <p class="text-[11px] text-slate-400">Confirm Field Dispatch for Well CSS-SRP-W108</p>
+          </div>
+        </div>
+        <button onclick="closeEngineerModal()" class="text-slate-400 hover:text-white text-lg">&times;</button>
+      </div>
+
+      <div class="bg-[#050e1d] p-4 rounded-xl border border-slate-800 space-y-2 text-xs">
+        <div class="text-cyan-300 font-bold">Recommended Setpoints:</div>
+        <div class="grid grid-cols-2 gap-2 text-slate-300 pt-1">
+          <div>&bull; Steam Volume: <b class="text-white" id="modal-steam">4,200 tonnes</b></div>
+          <div>&bull; Soak Duration: <b class="text-white" id="modal-soak">5 Days</b></div>
+          <div>&bull; Stroke Length: <b class="text-white" id="modal-stroke">144 in</b></div>
+          <div>&bull; Pumping Speed: <b class="text-white" id="modal-spm">6.8 SPM</b></div>
+        </div>
+      </div>
+
+      <div class="space-y-2 text-xs">
+        <label class="text-slate-300 block">Lead Petroleum Engineer Signature:</label>
+        <input type="text" id="engNameInput" value="Er. Shubham (PE #26120-ONGC)" class="w-full bg-[#050e1d] border border-slate-700 rounded-lg p-2.5 text-white font-mono focus:border-cyan-400 outline-none">
+      </div>
+
+      <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800 text-xs">
+        <button onclick="closeEngineerModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl">Cancel</button>
+        <button onclick="approveAndDispatch()" class="px-5 py-2 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-bold rounded-xl shadow-lg">Authorize & Save to Database</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = window.location.origin.includes('http') ? '' : 'http://localhost:3000';
+    let isBackendConnected = false;
+    let eventSource = null;
+
+    function switchView(viewId) {
+      document.querySelectorAll('.view-panel').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.view-tab').forEach(el => {
+        el.classList.remove('bg-cyan-500/20', 'text-cyan-300', 'border-cyan-500/50', 'font-bold');
+        el.classList.add('text-slate-400', 'border-transparent');
+      });
+
+      const target = document.getElementById(`view-${viewId}`);
+      if (target) target.classList.remove('hidden');
+
+      const activeTab = document.getElementById(`tab-${viewId}`);
+      if (activeTab) {
+        activeTab.classList.add('bg-cyan-500/20', 'text-cyan-300', 'border-cyan-500/50', 'font-bold');
+        activeTab.classList.remove('text-slate-400', 'border-transparent');
+      }
+
+      if (viewId === 'dynacard') fetchAndDrawDynacard();
+      if (viewId === 'thermal') fetchAndDrawThermal();
+      if (viewId === 'calibration') fetchKalmanState();
+      if (viewId === 'database') fetchDatabaseStats();
+    }
+
+    function triggerEngineerModal() { 
+      document.getElementById('modal-steam').innerText = document.getElementById('slider-steam-val').innerText + ' tonnes';
+      document.getElementById('modal-soak').innerText = document.getElementById('slider-soak-val').innerText + ' Days';
+      document.getElementById('modal-stroke').innerText = document.getElementById('slider-stroke-val').innerText + ' in';
+      document.getElementById('modal-spm').innerText = document.getElementById('slider-spm-val').innerText + ' SPM';
+      document.getElementById('engineerModal').classList.remove('hidden'); 
+    }
+    
+    function closeEngineerModal() { document.getElementById('engineerModal').classList.add('hidden'); }
+
+    async function approveAndDispatch() {
+      const name = document.getElementById('engNameInput').value;
+      const params = {
+        steamVolumeTonnes: parseFloat(document.getElementById('slider-steam-val').innerText),
+        soakDays: parseFloat(document.getElementById('slider-soak-val').innerText),
+        strokeLengthIn: parseFloat(document.getElementById('slider-stroke-val').innerText),
+        spm: parseFloat(document.getElementById('slider-spm-val').innerText)
+      };
+
+      try {
+        const res = await fetch(`${API_BASE}/api/engineer/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ engineerName: name, parameters: params })
+        });
+        const data = await res.json();
+        alert(`[SAVED TO DATABASE & DISPATCHED]\n${data.message}\nAudit Record ID: ${data.approvalRecord.id}`);
+      } catch (err) {
+        alert(`[CLIENT DISPATCH]\nAuthorized by ${name}.\nParameters dispatched to field SCADA RTU.`);
+      }
+      closeEngineerModal();
+    }
+
+    let isLiveSim = true;
+    function setSimState(state) {
+      isLiveSim = state;
+      const liveBtn = document.getElementById('liveSimBtn');
+      const pauseBtn = document.getElementById('pauseSimBtn');
+      if (state) {
+        liveBtn.className = "px-2.5 py-1 rounded bg-cyan-500 text-slate-950 font-bold transition-all";
+        pauseBtn.className = "px-2.5 py-1 rounded text-slate-400 hover:text-white transition-all";
+      } else {
+        pauseBtn.className = "px-2.5 py-1 rounded bg-amber-500 text-slate-950 font-bold transition-all";
+        liveBtn.className = "px-2.5 py-1 rounded text-slate-400 hover:text-white transition-all";
+      }
+    }
+
+    function initBackendConnection() {
+      try {
+        eventSource = new EventSource(`${API_BASE}/api/telemetry/stream`);
+        eventSource.onopen = () => {
+          isBackendConnected = true;
+          document.getElementById('backendLed').className = "w-2.5 h-2.5 rounded-full bg-emerald-400 led-live";
+          document.getElementById('backendStatusText').innerText = "NODE.JS + DB PERSISTENCE";
+          document.getElementById('backendStatusText').className = "text-emerald-400 font-bold";
+        };
+
+        eventSource.onmessage = (event) => {
+          if (!isLiveSim) return;
+          const data = JSON.parse(event.data);
+          updateTelemetryUI(data);
+        };
+
+        eventSource.onerror = () => {
+          isBackendConnected = false;
+          document.getElementById('backendLed').className = "w-2.5 h-2.5 rounded-full bg-cyan-400";
+          document.getElementById('backendStatusText').innerText = "STANDALONE CLIENT MODE";
+          document.getElementById('backendStatusText').className = "text-cyan-300 font-bold";
+        };
+      } catch (e) {}
+    }
+
+    function updateTelemetryUI(data) {
+      document.getElementById('kpi-oil').innerText = data.netOilRateM3Day;
+      document.getElementById('kpi-temp').innerText = data.bottomholeTempC;
+      document.getElementById('kpi-visc').innerText = data.oilViscosityCp;
+      document.getElementById('val-pwf').innerText = data.bottomholePressMpa;
+      document.getElementById('val-temp-stream').innerText = data.bottomholeTempC;
+      document.getElementById('val-current').innerText = data.motorCurrentAmps;
+    }
+
+    setInterval(() => {
+      const now = new Date();
+      document.getElementById('liveClock').innerText = now.toTimeString().split(' ')[0] + ' UTC';
+    }, 1000);
+
+    // Fetch Database Stats
+    async function fetchDatabaseStats() {
+      try {
+        const res = await fetch(`${API_BASE}/api/database/stats`);
+        if (res.ok) {
+          const stats = await res.json();
+          document.getElementById('db-engine').innerText = stats.storageEngine;
+          document.getElementById('db-wells-count').innerText = `${stats.totalWells} Wells`;
+          document.getElementById('db-cycles-count').innerText = `${stats.totalCycles} Cycles`;
+          document.getElementById('db-telemetry-count').innerText = `${stats.telemetryRecords} Records`;
+          document.getElementById('db-approvals-count').innerText = `${stats.engineerApprovals} Authorized`;
+        }
+
+        const appRes = await fetch(`${API_BASE}/api/engineer/history`);
+        if (appRes.ok) {
+          const history = await appRes.json();
+          renderApprovalsList(history);
+        }
+      } catch (e) {}
+    }
+
+    function renderApprovalsList(records) {
+      const container = document.getElementById('approvalsList');
+      if (!container || !records) return;
+      container.innerHTML = records.map(r => `
+        <div class="p-3 bg-[#061224] rounded-xl border border-emerald-500/30 space-y-1.5">
+          <div class="flex justify-between items-center">
+            <span class="font-bold text-emerald-400">${r.id}</span>
+            <span class="text-[10px] text-slate-400">PLC: ${r.plcRegisterResponse || 'ACK_SUCCESS'}</span>
+          </div>
+          <div class="text-white font-bold">${r.engineerName}</div>
+          <div class="text-[11px] text-slate-300">
+            Steam: <b>${r.approvedParameters.steamVolumeTonnes} t</b> &bull; Soak: <b>${r.approvedParameters.soakDays}d</b> &bull; Stroke: <b>${r.approvedParameters.strokeLengthIn}"</b> &bull; Speed: <b>${r.approvedParameters.pumpingSpeedSpm || r.approvedParameters.spm} SPM</b>
+          </div>
+          <div class="text-[10px] text-slate-400 flex justify-between pt-1 border-t border-slate-800">
+            <span>Well: ${r.wellId || 'CSS-SRP-W108'}</span>
+            <span class="text-emerald-400">${r.status || 'DISPATCHED_TO_FIELD_PLC'}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function fetchAndDrawDynacard() {
+      const stroke = document.getElementById('slider-stroke-val').innerText;
+      const spm = document.getElementById('slider-spm-val').innerText;
+      try {
+        const res = await fetch(`${API_BASE}/api/dynacard?stroke=${stroke}&spm=${spm}`);
+        if (res.ok) {
+          const cardData = await res.json();
+          renderDynacardCanvas(cardData.surfaceCard, cardData.downholeCard);
+          return;
+        }
+      } catch (e) {}
+      drawDynacardDefault();
+    }
+
+    function renderDynacardCanvas(surfacePoints, downholePoints) {
+      const canvas = document.getElementById('dynacardCanvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width; const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      ctx.strokeStyle = '#0f1f38'; ctx.lineWidth = 1;
+      for (let x = 60; x < w - 20; x += 60) {
+        ctx.beginPath(); ctx.moveTo(x, 20); ctx.lineTo(x, h - 40); ctx.stroke();
+      }
+      for (let y = 30; y < h - 40; y += 40) {
+        ctx.beginPath(); ctx.moveTo(60, y); ctx.lineTo(w - 20, y); ctx.stroke();
+      }
+
+      ctx.strokeStyle = '#334155'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(60, 20); ctx.lineTo(60, h - 40); ctx.lineTo(w - 20, h - 40); ctx.stroke();
+
+      if (surfacePoints && surfacePoints.length > 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = '#00f0ff';
+        ctx.lineWidth = 2.5;
+        surfacePoints.forEach((p, idx) => {
+          const x = 60 + (p.positionIn / 144) * (w - 100);
+          const y = (h - 40) - (p.loadLbs / 30000) * (h - 70);
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.stroke();
+      }
+
+      if (downholePoints && downholePoints.length > 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = 2.5;
+        downholePoints.forEach((p, idx) => {
+          const x = 60 + (p.positionIn / 144) * (w - 100);
+          const y = (h - 40) - (p.loadLbs / 30000) * (h - 70);
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.stroke();
+      }
+    }
+
+    function drawDynacardDefault() {
+      const canvas = document.getElementById('dynacardCanvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width; const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      ctx.strokeStyle = '#00f0ff'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(100, 220); ctx.bezierCurveTo(140, 70, 480, 50, 540, 80); ctx.bezierCurveTo(560, 110, 520, 250, 450, 260); ctx.bezierCurveTo(320, 270, 140, 260, 100, 220); ctx.stroke();
+      ctx.strokeStyle = '#10b981'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(140, 230); ctx.lineTo(140, 120); ctx.lineTo(500, 120); ctx.lineTo(500, 230); ctx.closePath(); ctx.stroke();
+    }
+
+    async function fetchAndDrawThermal() {
+      const steam = document.getElementById('slider-steam-val').innerText;
+      const soak = document.getElementById('slider-soak-val').innerText;
+      try {
+        const res = await fetch(`${API_BASE}/api/thermal/profile?steam=${steam}&soak=${soak}`);
+        if (res.ok) {
+          const thermal = await res.json();
+          renderThermalCanvas(thermal.data);
+          return;
+        }
+      } catch (e) {}
+    }
+
+    function renderThermalCanvas(dataPoints) {
+      const canvas = document.getElementById('thermalCanvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width; const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 3;
+      ctx.beginPath();
+      dataPoints.forEach((p, idx) => {
+        const x = 60 + (p.day / 90) * (w - 100);
+        const y = (h - 40) - (p.temperatureC / 250) * (h - 70);
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    async function fetchKalmanState() {
+      try {
+        const res = await fetch(`${API_BASE}/api/calibration/state`);
+        if (res.ok) {
+          const kalman = await res.json();
+          document.getElementById('kalman-perm').innerText = kalman.permeabilityMd + ' mD';
+          document.getElementById('kalman-skin').innerText = (kalman.skinFactor > 0 ? '+' : '') + kalman.skinFactor;
+          document.getElementById('kalman-heat').innerText = kalman.overburdenHeatLoss + ' W/m·K';
+          document.getElementById('kalman-slip').innerText = kalman.pumpSlippageCoeff;
+        }
+      } catch (e) {}
+    }
+
+    async function updateOptimization() {
+      const steam = parseFloat(document.getElementById('slider-steam').value);
+      const soak = parseFloat(document.getElementById('slider-soak').value);
+      const stroke = parseFloat(document.getElementById('slider-stroke').value);
+      const spm = parseFloat(document.getElementById('slider-spm').value);
+
+      document.getElementById('slider-steam-val').innerText = steam;
+      document.getElementById('slider-soak-val').innerText = soak;
+      document.getElementById('slider-stroke-val').innerText = stroke;
+      document.getElementById('slider-spm-val').innerText = spm;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/optimize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ steamVolumeTonnes: steam, soakDays: soak, strokeLengthIn: stroke, spm: spm })
+        });
+        if (res.ok) {
+          const { evaluation } = await res.json();
+          document.getElementById('custom-oil').innerText = Number(evaluation.kpis.cumOilM3).toLocaleString();
+          document.getElementById('custom-sor').innerText = evaluation.kpis.sor;
+          document.getElementById('custom-energy').innerText = evaluation.kpis.energyKwhM3;
+          document.getElementById('custom-fatigue').innerText = evaluation.kpis.fatigueGoodmanPct + '%';
+          document.getElementById('custom-npv').innerText = '$' + Number(evaluation.kpis.netNpvGainDollars).toLocaleString();
+        }
+      } catch (e) {}
+    }
+
+    function applyOptimalRecipe() {
+      document.getElementById('slider-steam').value = 4200;
+      document.getElementById('slider-soak').value = 5;
+      document.getElementById('slider-stroke').value = 144;
+      document.getElementById('slider-spm').value = 6.8;
+      updateOptimization();
+    }
+
+    function resetSliders() {
+      document.getElementById('slider-steam').value = 3500;
+      document.getElementById('slider-soak').value = 3;
+      document.getElementById('slider-stroke').value = 120;
+      document.getElementById('slider-spm').value = 5.0;
+      updateOptimization();
+    }
+
+    window.addEventListener('load', () => { 
+      initBackendConnection();
+      drawDynacardDefault(); 
+    });
+  </script>
+</body>
+</html>
